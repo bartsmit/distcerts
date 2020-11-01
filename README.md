@@ -28,9 +28,9 @@ These perl modules are required:
 The script runs an implementation script on each host which is responsible for installing the certificate. Sample scripts for:
 
 
-lighttpd (e.g. Pi-Hole)_
-see /root/lighttpd.setcerts.sh_
-see /etc/lighttpd/external.conf_
+lighttpd (e.g. Pi-Hole)__
+see /root/lighttpd.setcerts.sh__
+see /etc/lighttpd/external.conf__
 
 opnsense (relies on the php script from: https://github.com/pluspol-interactive/opnsense-import-certificate)_
 see /root/opnsense.setcerts.sh_
