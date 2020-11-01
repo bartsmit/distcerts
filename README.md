@@ -11,3 +11,10 @@ Hosts are specified in a YAML file and can have settings for:
 - SSH port
 - location for PEM files
 - script for certificate installation
+
+These perl modules are required:
+- Sys::Syslog
+- Net::SCP
+- Net::OpenSSH
+- Crypt::OpenSSL::PKCS12
+- YAML::Tiny
