@@ -31,6 +31,7 @@ The script runs an implementation script on each host which is responsible for i
 lighttpd (e.g. Pi-Hole)
 
 see /root/lighttpd.setcerts.sh
+
 see /etc/lighttpd/external.conf
 
 
