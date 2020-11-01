@@ -1,0 +1,8 @@
+--- # Hosts for certificate distribution
+hostname:
+    name: hostname.my.domain
+    user: root
+    ssh:  22
+    port: 443
+    dest: /root
+    cmd:  "/root/setcrt.sh"
