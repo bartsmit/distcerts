@@ -3,7 +3,8 @@ Distribute Letsencrypt certificates to hosts
 
 A single host configured with dehydrated downloads a wildcard certificate for one or more domains.
 
-The distcerts perl script runs nightly and compares the dehydrated SAN or wildcard certificate against the one returned by each internal host. If they are different, the script will upload the PEM files and run a script on the host to install the new certificate.
+The distcerts perl script runs nightly and compares the dehydrated SAN or wildcard certificate against the one returned by each internal host.
+If they are different, the script will upload the PEM files and run a script on the host to install the new certificate.
 
 Hosts are specified in a YAML file and can have settings for:
 - name
@@ -13,7 +14,9 @@ Hosts are specified in a YAML file and can have settings for:
 - location for PEM files
 - script for certificate installation
 
-Each host must be configured with SSH keys to allow the user to log in without a password. To do this, the public key of the user running the distcerts script must be imported into ~/.ssh/authorized_keys for the user running the implementation script on the host. 
+Each host must be configured with SSH keys to allow the user to log in without a password.
+To do this, the public key of the user running the distcerts script must be imported into
+~/.ssh/authorized_keys for the user running the implementation script on the host. 
 
 These perl modules are required:
 - Sys::Syslog
