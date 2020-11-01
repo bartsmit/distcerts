@@ -32,6 +32,7 @@ lighttpd (e.g. Pi-Hole)__
 see /root/lighttpd.setcerts.sh__
 see /etc/lighttpd/external.conf__
 
+
 opnsense (relies on the php script from: https://github.com/pluspol-interactive/opnsense-import-certificate)_
 see /root/opnsense.setcerts.sh_
 
