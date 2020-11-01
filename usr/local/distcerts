@@ -1,0 +1,142 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+use Sys::Syslog qw(:DEFAULT setlogsock);
+use Net::SCP qw(scp);
+use Net::OpenSSH;
+use Crypt::OpenSSL::PKCS12;
+use YAML::Tiny;
+
+setlogsock("unix");
+openlog("distcerts", "pid", "local3");
+
+# the host definitions are in a yaml file
+my $hostyaml = '/etc/distcert.yaml';
+
+# always copy if called with -o or --override
+my $over = ((grep /-o/,@ARGV) or (grep /--override/,@ARGV));
+
+# Log loads of goodies if called with -v or --verbose
+my $verb = ((grep /-v/,@ARGV) or (grep /--verbose/,@ARGV));
+
+# create a hash to store the domains from dehydrated
+my %names;
+
+# iterate over certs in dehydrated domains.txt file
+open (my $fh, '<', '/etc/dehydrated/domains.txt')
+   or die "Unable to open domains.txt. Is dehydrated installed and configured? $!\n";
+
+while (my $doms = <$fh>) {
+   chomp $doms;
+   syslog("debug", "Processing domain $doms") if $verb;
+
+   # split the certificates line on white space
+   my @certs = split /\s/, $doms;
+
+   # the first entry on a domains.txt line is the main certificate
+   my $maincert = $certs[0];
+   syslog("debug", "Found certificate $maincert") if $verb;
+
+   # the first entry corresponds with the dehydrated subdirectory
+   my $dir = "/var/lib/dehydrated/certs/$maincert";
+   syslog("debug", "Looking for certs in directory $dir") if $verb;
+
+   # get the thumbprint of the dehydrated cert
+   my $acme_thumb = `openssl x509 -noout -serial -in $dir/cert.pem | cut -d'=' -f2`
+      or die "No $maincert serial found. Has dehydrated been executed at least once?\n";
+   chomp $acme_thumb;
+   syslog("debug", "The ACME certificate has a thumbprint of $acme_thumb") if $verb;
+
+   # replace the main cert name with the thumbprint since the name is preserved in the hash key
+   $certs[0] = $acme_thumb;
+
+   # store the values in the hash
+   $names{$maincert} = [ @certs ];
+
+   # create a combined.pem from the private key and the certificate
+   system("cat $dir/privkey.pem $dir/cert.pem > $dir/combined.pem");
+   syslog("debug", "Created a combined cert $dir/combined.pem") if $verb;
+
+   # create a pfx from the cert and the key named Letsencrypt with password 12345
+   my $pkcs12 = Crypt::OpenSSL::PKCS12->new();
+   $pkcs12->create("$dir/cert.pem", "$dir/privkey.pem", '12345', "$dir/pfx.pem", "Letsencrypt");
+   syslog("debug", "Created a pkcs12 package $dir/pfx.pem which is NOT in pem format") if $verb;
+
+   # create a tarball from the dehydrated PEM's and derived files (even though the PFX is obviously not in PEM format)
+   my $files = '';
+   $files .= "$_.pem " foreach ('cert', 'privkey', 'fullchain', 'chain', 'pfx');
+   system("tar czf $dir/pems.tgz -h -C $dir $files 2>/dev/null");
+   syslog("debug", "Created a tarball in $dir/pems.tgz") if $verb;
+}
+
+# read the hosts that need certs distributed
+my $yaml = YAML::Tiny->new();
+$yaml = YAML::Tiny->read($hostyaml);
+my $conf = $yaml->[0];
+syslog("debug", "Imported $hostyaml") if $verb;
+
+foreach my $host (keys % {$conf}) {
+   syslog("debug", "Processing host $host") if $verb;
+   my $hostname = $conf->{$host}->{name};
+   my $port     = $conf->{$host}->{port};
+   my $host_thumb = `echo Q | openssl s_client -showcerts -connect $hostname:$port 2>/dev/null | openssl x509 -noout -serial | cut -d'=' -f2`
+      or print "Unable to read certificate from $hostname on port $port. Is its service up and running?\n";
+   chomp $host_thumb;
+   syslog("debug", "The certificate on host $host retrieved on port $port has a thumbprint of $host_thumb") if $verb;
+   # match the host to a names hash entry
+   my $acme_thumb = ''; my $dir = '/var/lib/dehydrated/certs/';
+   for my $fqdn ( keys %names ) {
+      my @san = @{ $names{$fqdn} };
+
+      # check if the FQDN has a wildcard
+      if ((substr $san[1], 0, 1) eq '*') {
+         (my $hostend = $hostname) =~ s/([^.]+)//;
+          my $wildend = "." . substr($san[1],2);
+          $acme_thumb = $san[0] if ($hostend eq $wildend);
+
+      # if it doesn't, check if the host is in the SAN list
+      } elsif (grep /$hostname/, @san) {
+         $acme_thumb = $san[0];
+      }
+
+      # set the dehydrated directory and exit the loop if we have a match
+      if ($acme_thumb ne '') {
+         $dir .= $fqdn;
+         last;
+      }
+   }
+   print "The host $hostname doesn't match any dehydrated domain. Check $hostyaml for errors\n" if ($acme_thumb eq '');
+
+   # skip this host if thumb prints are the same and there is no override specified
+   next if (($host_thumb eq $acme_thumb) && !$over);
+
+   # copy the tarball to the destination directory on the host
+   my $username = $conf->{$host}->{user};
+   my $sport = $conf->{$host}->{ssh};
+   my $dest = $conf->{$host}->{dest};
+   my $pems = $conf->{$host}->{pems};
+   my $scp = Net::SCP->new ( { "host"=>$host, "user"=>$username, "port"=>$sport } );
+   $scp->cwd($dest);
+   $scp->put("$dir/pems.tgz") or print "The secure copy of the pems.tgz tarball to $dest on $hostname failed ".$scp->{errstr};
+   syslog("debug", "Copied cert tarball to $dest on $host") if $verb;
+
+   # and run the command to install the new cert
+   my $cmd =  $conf->{$host}->{cmd};
+   my $ssh = Net::OpenSSH->new($username."@".$host.":".$sport);
+   $ssh->error and die "SSH connection failed ".$ssh->error;
+   syslog("debug", "Logged in as $username on $host via port $port") if $verb;
+
+   # suppress output from the command temporarily
+   open OLDERR, ">&STDERR"; open STDERR, ">/dev/null";
+   open OLDSTD, ">&STDOUT"; open STDOUT, ">/dev/null";
+   $ssh->system( {stderr_discard => 1,
+                  stdout_discard => 1},
+                  $cmd)
+      or print $cmd." failed ".$ssh->error;
+   *STDERR = *OLDERR; *STDOUT = *OLDSTD;
+   syslog("debug", "Executed command $cmd on host $host") if $verb;
+}
+
+# close the debug log
+closelog();
