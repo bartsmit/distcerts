@@ -16,7 +16,9 @@ Hosts are specified in a YAML file and can have settings for:
 
 Each host must be configured with SSH keys to allow the user to log in without a password.
 To do this, the public key of the user running the distcerts script must be imported into
-~/.ssh/authorized_keys for the user running the implementation script on the host. 
+~/.ssh/authorized_keys for the user running the implementation script on the host. Hosts
+that have a non-standard SSH port also need an entry in /etc/ssh/ssh_config with Host FQDN
+and Port xxxxx lines to override the Host * entry.
 
 These perl modules are required:
 - Sys::Syslog
