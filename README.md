@@ -20,6 +20,8 @@ To do this, the public key of the user running the distcerts script must be impo
 that have a non-standard SSH port also need an entry in /etc/ssh/ssh_config with Host FQDN
 and Port xxxxx lines to override the Host * entry.
 
+Set the script to be executable and configure the user's crontab to run it nightly.
+
 These perl modules are required:
 - Sys::Syslog
 - Net::SCP
